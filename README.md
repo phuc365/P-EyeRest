@@ -9,7 +9,8 @@ Lời nhắc hiện thành một bảng mờ ở giữa màn hình. Chuột bấ
 - **Nghỉ dài:** mỗi 2 giờ làm việc, bảng nhắc bạn nghỉ 15 phút. Phần đầu có bài đưa mắt theo các hướng (lên, xuống, trái, phải, chéo, đảo tròn, chớp mắt, nhắm mắt). Sau đó bảng mờ hơn và nhắc bạn rời màn hình.
 - **Hiện trên mọi màn hình:** mỗi màn hình có một bảng nhắc, nét ở mọi mức scale DPI.
 - **Tự dừng đếm khi bạn rời máy:** xem mục [Cách tính thời gian làm việc](#cách-tính-thời-gian-làm-việc).
-- **Menu ở khay hệ thống:** nghỉ ngay, bỏ qua, xem thử bảng nhắc, chọn kích thước và độ đậm, tạm dừng 1 giờ, khởi động cùng Windows.
+- **Hoãn nhắc khi bạn đang dùng ứng dụng toàn màn hình:** khi bạn chơi game, trình chiếu hoặc xem video toàn màn hình, P-EyeRest chờ bạn thoát toàn màn hình rồi mới hiện bảng nhắc.
+- **Menu ở khay hệ thống:** nghỉ ngay, bỏ qua, xem thử bảng nhắc, chọn kích thước và độ đậm, chỉnh thời gian nhắc, tạm dừng 1 giờ, khởi động cùng Windows.
 
 ## Cơ sở của các mốc thời gian
 
@@ -56,43 +57,65 @@ Chuột phải icon con mắt ở khay hệ thống để mở menu:
 | Xem thử overlay | Hiện bảng nhắc 6 giây, không ảnh hưởng bộ đếm |
 | Kích thước overlay | 50%, 70% (mặc định), 85% hoặc 92% vùng làm việc của màn hình |
 | Độ đậm overlay | 35%, 55%, 75% (mặc định) hoặc 90% |
+| Thời gian nhắc | Chọn các mốc thời gian và cách tính rời máy, xem bảng bên dưới |
 | Tạm dừng 1 giờ | Dừng nhắc trong 1 giờ. Bấm lại để tiếp tục |
 | Khởi động cùng Windows | Bật hoặc tắt shortcut trong thư mục Startup của bạn |
 | Giới thiệu P-EyeRest | Xem phiên bản, tác giả và giấy phép |
 | Thoát | Tắt P-EyeRest |
 
+Menu **Thời gian nhắc** có các mục sau. Lựa chọn mới có hiệu lực ngay, bạn không phải khởi động lại P-EyeRest.
+
+| Mục menu | Lựa chọn |
+|---|---|
+| Nghỉ ngắn mỗi | 15, 20 (mặc định), 30 hoặc 45 phút |
+| Nghỉ ngắn trong | 20 (mặc định), 30 hoặc 60 giây |
+| Nghỉ dài mỗi | 1 giờ, 1 giờ 30 phút, 2 giờ (mặc định), 3 giờ, hoặc tắt nghỉ dài |
+| Nghỉ dài trong | 5, 10 hoặc 15 phút (mặc định) |
+| Coi là rời máy khi không chạm máy | 10, 15 (mặc định) hoặc 30 phút, hoặc "Không bao giờ" (chỉ tính rời máy khi khóa máy hoặc tắt màn hình) |
+| Hoãn nhắc khi đang toàn màn hình | Bật (mặc định) hoặc tắt |
+
 Rê chuột lên icon để xem còn bao lâu tới lần nghỉ kế tiếp.
 
 ## Cấu hình
 
-P-EyeRest lưu kích thước và độ đậm bạn chọn trong file `%APPDATA%\P-EyeRest\settings.ini`:
+P-EyeRest lưu các lựa chọn của bạn trong file `%APPDATA%\P-EyeRest\settings.ini`. Mỗi dòng có dạng `khóa=số`, ví dụ:
 
 ```ini
-fill=0.70
+fill=0.7
+micro_every_min=20
 opacity=0.75
 ```
 
-- `fill`: tỉ lệ vùng làm việc mà bảng nhắc chiếm, từ 0.30 tới 0.95.
-- `opacity`: độ đậm của bảng nhắc, từ 0.20 tới 0.90.
+| Khóa | Ý nghĩa | Khoảng cho phép | Mặc định |
+|---|---|---|---|
+| `fill` | Tỉ lệ vùng làm việc mà bảng nhắc chiếm | 0.30 tới 0.95 | 0.7 |
+| `opacity` | Độ đậm của bảng nhắc | 0.20 tới 0.90 | 0.75 |
+| `micro_every_min` | Số phút làm việc giữa hai lần nghỉ ngắn | 5 tới 120 | 20 |
+| `micro_sec` | Số giây của một lần nghỉ ngắn | 10 tới 120 | 20 |
+| `long_every_min` | Số phút làm việc giữa hai lần nghỉ dài. `0` là tắt nghỉ dài | 0 tới 480 | 120 |
+| `long_min` | Số phút của một lần nghỉ dài | 2 tới 60 | 15 |
+| `away_after_min` | Số phút không chạm máy thì coi là rời máy. `0` là chỉ tính khi khóa máy hoặc tắt màn hình | 0 tới 120 | 15 |
+| `defer_fullscreen` | `1` là hoãn nhắc khi đang toàn màn hình, `0` là không hoãn | 0 tới 1 | 1 |
 
-Nếu một giá trị nằm ngoài khoảng cho phép, P-EyeRest dùng giá trị mặc định.
-Các mốc thời gian (20 phút, 20 giây, 2 giờ, 15 phút) nằm trong `Config.Default()` của `EyeRest.cs`. Để đổi các mốc này, sửa code rồi build lại.
+Menu khay chỉ đưa ra vài lựa chọn. Để dùng giá trị khác trong khoảng cho phép, sửa file này khi P-EyeRest đã tắt, rồi mở lại P-EyeRest. Nếu một giá trị nằm ngoài khoảng cho phép, P-EyeRest dùng giá trị mặc định.
 
 ## Cách tính thời gian làm việc
 
 Không chạm phím hoặc chuột chưa chắc là bạn đang nghỉ, vì bạn có thể đang xem video hoặc đang đọc. P-EyeRest chỉ dừng đếm khi một trong các điều kiện sau đúng:
 
 - Máy khóa, screensaver đang chạy, hoặc màn hình đã tắt.
-- Bạn không chạm phím và chuột ít nhất 15 phút, loa không phát tiếng trong 60 giây gần nhất, và không có ứng dụng toàn màn hình hoặc chế độ trình chiếu.
+- Bạn không chạm phím và chuột ít nhất 15 phút (chỉnh được trong menu **Thời gian nhắc**), không có video đang phát, và không có ứng dụng toàn màn hình hoặc chế độ trình chiếu.
 
-Nếu bạn rời máy ít nhất 5 phút, bộ đếm nghỉ ngắn quay về 0. Nếu bạn rời máy ít nhất 15 phút, bộ đếm nghỉ dài cũng quay về 0. Khi máy sleep hoặc hibernate, P-EyeRest tính thời gian ngủ như thời gian rời máy.
+P-EyeRest biết có video đang phát nhờ Windows: khi phát video, trình duyệt và trình phát video yêu cầu Windows giữ màn hình sáng. Video tắt tiếng cũng có yêu cầu này. Nhạc phát không có hình thì không có yêu cầu này, nên nhạc nền không làm P-EyeRest coi là bạn đang xem.
+
+Nếu bạn rời máy ít nhất 5 phút, bộ đếm nghỉ ngắn quay về 0. Nếu bạn rời máy ít nhất bằng thời lượng nghỉ dài (mặc định 15 phút), bộ đếm nghỉ dài cũng quay về 0. Khi máy sleep hoặc hibernate, P-EyeRest tính thời gian ngủ như thời gian rời máy.
 
 ## Giới hạn hiện tại
 
-- Bảng nhắc vẫn hiện trên ứng dụng toàn màn hình, ví dụ game hoặc trình chiếu. Chuột vẫn bấm xuyên qua được.
-- Nếu bạn xem video tắt tiếng trong cửa sổ thường, hoặc đọc liền ít nhất 15 phút mà không chạm máy, P-EyeRest có thể tính đó là thời gian rời máy.
-- Nhạc nền đang phát cũng làm P-EyeRest coi là bạn đang xem, nên không dừng đếm.
-- Các mốc thời gian chưa chỉnh được trong menu.
+- P-EyeRest không có cảm biến để biết bạn có đang nhìn màn hình hay không. Nếu bạn thường đọc lâu mà không chạm máy, chọn "Không bao giờ" ở mục **Coi là rời máy khi không chạm máy**. Khi đó P-EyeRest chỉ tính rời máy khi máy khóa hoặc màn hình tắt.
+- Một số ứng dụng giữ màn hình sáng cả khi không phát video, ví dụ công cụ chống sleep hoặc phần mềm điều khiển từ xa. Khi ứng dụng này chạy, P-EyeRest coi là bạn đang xem, nên không dừng đếm khi bạn không chạm máy.
+- Trình phát video dùng cách giữ màn hình sáng kiểu cũ (`SetThreadExecutionState`) thì P-EyeRest không thấy được. Tác giả đã kiểm với Edge, chưa kiểm với trình phát video khác.
+- Tác giả đã kiểm chế độ hoãn nhắc với cửa sổ không viền phủ toàn màn hình, chưa kiểm với game DirectX độc quyền hoặc PowerPoint trình chiếu.
 
 ## Giấy phép
 

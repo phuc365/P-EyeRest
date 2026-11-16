@@ -33,8 +33,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct(Program.AppName)]
 [assembly: AssemblyCompany(Program.Author)]
 [assembly: AssemblyCopyright("© 2026 " + Program.Author)]
-[assembly: AssemblyVersion("1.0.0")]
-[assembly: AssemblyFileVersion("1.0.0")]
+[assembly: AssemblyVersion("1.1.0")]
+[assembly: AssemblyFileVersion("1.1.0")]
 
 static class Program
 {
@@ -62,7 +62,9 @@ static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             bool test = Array.IndexOf(args, "--test") >= 0;
-            Application.Run(new EyeRestApp(test ? Config.Test() : Config.Default()));
+            var cfg = test ? Config.Test() : Config.Default();
+            if (!test) cfg.LoadSettings();
+            Application.Run(new EyeRestApp(cfg));
             GC.KeepAlive(mutex);
         }
     }
@@ -70,8 +72,13 @@ static class Program
 
 class Config
 {
-    public int MicroEverySec, MicroDurSec, LongEverySec, LongDurSec;
-    public int IdleResetMicroSec, IdleResetLongSec, SoftAwaySec, StepSec;
+    // Khóa trong settings.ini (chỉnh qua menu khay "Thời gian nhắc").
+    public const string KeyMicroEvery = "micro_every_min", KeyMicroSec = "micro_sec", KeyLongEvery = "long_every_min",
+                        KeyLongMin = "long_min", KeyAwayAfter = "away_after_min", KeyDeferFullscreen = "defer_fullscreen";
+
+    public int MicroEverySec, MicroDurSec, LongEverySec, LongDurSec;   // LongEverySec = 0: tắt nghỉ dài
+    public int IdleResetMicroSec, IdleResetLongSec, SoftAwaySec, StepSec;   // SoftAwaySec = 0: chỉ tính rời máy khi khóa/tắt màn
+    public bool DeferFullscreen = true;   // hoãn nhắc khi đang có app toàn màn hình hoặc trình chiếu
 
     public static Config Default()
     {
@@ -80,10 +87,22 @@ class Config
             MicroEverySec = 20 * 60, MicroDurSec = 20,
             LongEverySec = 120 * 60, LongDurSec = 15 * 60,
             IdleResetMicroSec = 5 * 60,   // rời máy >= 5 phút: coi như đã nghỉ ngắn
-            IdleResetLongSec = 15 * 60,   // rời máy >= 15 phút: coi như đã nghỉ dài
-            SoftAwaySec = 15 * 60,        // màn còn sáng: không chạm máy >= 15 phút, không tiếng, không toàn màn hình → rời máy
+            IdleResetLongSec = 15 * 60,   // rời máy >= thời lượng nghỉ dài: coi như đã nghỉ dài
+            SoftAwaySec = 15 * 60,        // màn còn sáng: không chạm máy >= 15 phút và không có video → rời máy
             StepSec = 5
         };
+    }
+
+    // Đọc mốc thời gian người dùng chọn; giá trị thiếu hoặc ngoài khoảng → giữ mặc định ở Default().
+    public void LoadSettings()
+    {
+        MicroEverySec = (int)(Settings.Get(KeyMicroEvery, 20, 5, 120) * 60);
+        MicroDurSec = (int)Settings.Get(KeyMicroSec, 20, 10, 120);
+        LongEverySec = (int)(Settings.Get(KeyLongEvery, 120, 0, 480) * 60);
+        LongDurSec = (int)(Settings.Get(KeyLongMin, 15, 2, 60) * 60);
+        SoftAwaySec = (int)(Settings.Get(KeyAwayAfter, 15, 0, 120) * 60);
+        DeferFullscreen = Settings.Get(KeyDeferFullscreen, 1, 0, 1) >= 0.5f;
+        IdleResetLongSec = Math.Max(LongDurSec, IdleResetMicroSec);
     }
 
     // --test: rút ngắn chu kỳ để kiểm thử.
@@ -164,46 +183,64 @@ static class Startup
     }
 }
 
-// Lựa chọn của người dùng, lưu ở %APPDATA%\P-EyeRest\settings.ini (dòng "fill=0.70", "opacity=0.75").
+// Lựa chọn của người dùng, lưu ở %APPDATA%\P-EyeRest\settings.ini, mỗi dòng "khóa=số" (ví dụ "fill=0.7").
 static class Settings
 {
-    public static string FilePath = Path.Combine(
+    static string filePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Program.AppName, "settings.ini");
-    // Độ đậm < 1 để WinForms giữ cửa sổ layered (click-through).
-    const float DefaultFill = 0.7f, MinFill = 0.3f, MaxFill = 0.95f;
-    const float DefaultOpacity = 0.75f, MinOpacity = 0.2f, MaxOpacity = 0.9f;
+    static Dictionary<string, float> values;   // nạp từ file ở lần Get/Set đầu tiên
 
-    public static float LoadFill() { return Load("fill", DefaultFill, MinFill, MaxFill); }
-    public static float LoadOpacity() { return Load("opacity", DefaultOpacity, MinOpacity, MaxOpacity); }
-
-    static float Load(string key, float def, float min, float max)
+    public static string FilePath
     {
+        get { return filePath; }
+        set { filePath = value; values = null; }
+    }
+
+    // Giá trị trong file nếu hợp lệ và nằm trong [min, max]; ngược lại trả về def.
+    public static float Get(string key, float def, float min, float max)
+    {
+        float v;
+        return Values().TryGetValue(key, out v) && v >= min && v <= max ? v : def;
+    }
+
+    public static void Set(string key, float value)
+    {
+        Values()[key] = value;
+        Save();
+    }
+
+    static Dictionary<string, float> Values()
+    {
+        if (values != null) return values;
+        values = new Dictionary<string, float>();
         try
         {
-            foreach (var line in File.ReadAllLines(FilePath))
+            foreach (var line in File.ReadAllLines(filePath))
             {
                 var kv = line.Split(new[] { '=' }, 2);
                 float v;
-                if (kv.Length == 2 && kv[0].Trim() == key
-                    && float.TryParse(kv[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out v)
-                    && v >= min && v <= max)
-                    return v;
+                if (kv.Length == 2 && float.TryParse(kv[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out v))
+                    values[kv[0].Trim()] = v;
             }
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
-        return def;
+        return values;
     }
 
     // Ghi file tạm cùng thư mục rồi thay thế, để file không bị hỏng nửa chừng.
-    public static void Save(float fill, float opacity)
+    static void Save()
     {
+        var keys = new List<string>(values.Keys);
+        keys.Sort(StringComparer.Ordinal);
+        var sb = new System.Text.StringBuilder();
+        foreach (var k in keys) sb.Append(k).Append('=').Append(values[k].ToString("0.###", CultureInfo.InvariantCulture)).Append("\r\n");
+
         string tmp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-            File.WriteAllText(tmp, "fill=" + fill.ToString("0.00", CultureInfo.InvariantCulture) + "\r\n"
-                                 + "opacity=" + opacity.ToString("0.00", CultureInfo.InvariantCulture) + "\r\n");
+            File.WriteAllText(tmp, sb.ToString());
             if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
             else File.Move(tmp, FilePath);
         }
@@ -218,38 +255,17 @@ class Presence : NativeWindow, IDisposable
 {
     const int WM_POWERBROADCAST = 0x218, PBT_POWERSETTINGCHANGE = 0x8013;
     const int QUNS_NOT_PRESENT = 1, QUNS_BUSY = 2, QUNS_RUNNING_D3D_FULL_SCREEN = 3, QUNS_PRESENTATION_MODE = 4, QUNS_APP = 7;
-    const uint AudioSampleAfterIdleSec = 30;   // chỉ đo loa khi đã không chạm máy một lúc
-    const long AudioHoldMs = 60 * 1000;        // khoảng lặng giữa các đoạn tiếng vẫn tính là đang xem
+    const int SystemExecutionState = 16;
+    const uint ES_DISPLAY_REQUIRED = 0x2;
     static Guid GUID_SESSION_DISPLAY_STATUS = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
 
     [DllImport("user32.dll")] static extern IntPtr RegisterPowerSettingNotification(IntPtr hRecipient, ref Guid powerSettingGuid, int flags);
     [DllImport("user32.dll")] static extern bool UnregisterPowerSettingNotification(IntPtr handle);
     [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
-
-    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumeratorCom { }
-
-    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IMMDeviceEnumerator
-    {
-        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
-        [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
-    }
-
-    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IMMDevice
-    {
-        [PreserveSig] int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object iface);
-    }
-
-    [ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    interface IAudioMeterInformation
-    {
-        [PreserveSig] int GetPeakValue(out float peak);
-    }
+    [DllImport("powrprof.dll")] static extern uint CallNtPowerInformation(int level, IntPtr inBuf, uint inLen, out uint outBuf, uint outLen);
 
     readonly IntPtr notifyHandle;
     bool displayOff;
-    long lastAudioMs = -1;
 
     public Presence()
     {
@@ -281,41 +297,27 @@ class Presence : NativeWindow, IDisposable
     // Chắc chắn không nhìn màn hình: tắt màn, khóa máy, screensaver, phiên Fast User Switching khác.
     public bool HardAway { get { return displayOff || NotificationState() == QUNS_NOT_PRESENT; } }
 
-    // Dấu hiệu đang xem/nghe: app toàn màn hình, chế độ trình chiếu, hoặc loa có tiếng trong 60 giây gần nhất.
-    public bool Watching(uint idleSec, long nowMs)
+    // App toàn màn hình (game, video F11), DirectX độc quyền, chế độ trình chiếu hoặc app Store toàn màn hình.
+    public static bool Fullscreen()
     {
         int st = NotificationState();
-        if (st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE || st == QUNS_APP) return true;
-        if (idleSec >= AudioSampleAfterIdleSec && AudioPeak() > 0.001f) lastAudioMs = nowMs;
-        return lastAudioMs >= 0 && nowMs - lastAudioMs < AudioHoldMs;
+        return st == QUNS_BUSY || st == QUNS_RUNNING_D3D_FULL_SCREEN || st == QUNS_PRESENTATION_MODE || st == QUNS_APP;
     }
 
+    // Có app đang yêu cầu giữ màn hình sáng. Trình duyệt và trình phát video bật cờ này khi phát video,
+    // kể cả video tắt tiếng; phát nhạc không có hình thì không bật (đã đo với Edge).
+    public static bool DisplayRequired()
+    {
+        uint st;
+        return CallNtPowerInformation(SystemExecutionState, IntPtr.Zero, 0, out st, 4) == 0 && (st & ES_DISPLAY_REQUIRED) != 0;
+    }
+
+    public static bool Watching() { return Fullscreen() || DisplayRequired(); }
+
+    // softAwaySec = 0: chỉ tính rời máy khi Windows báo rõ (khóa, screensaver, tắt màn).
     public static bool IsAway(uint idleSec, bool hardAway, bool watching, int softAwaySec)
     {
-        return hardAway || (!watching && idleSec >= softAwaySec);
-    }
-
-    // Mức đỉnh 0..1 của loa mặc định; không có thiết bị hoặc lỗi COM → 0.
-    public static float AudioPeak()
-    {
-        object enumObj = null, meterObj = null;
-        IMMDevice dev = null;
-        try
-        {
-            enumObj = new MMDeviceEnumeratorCom();
-            if (((IMMDeviceEnumerator)enumObj).GetDefaultAudioEndpoint(0 /*eRender*/, 0 /*eConsole*/, out dev) != 0 || dev == null) return 0;
-            var iid = typeof(IAudioMeterInformation).GUID;
-            if (dev.Activate(ref iid, 23 /*CLSCTX_ALL*/, IntPtr.Zero, out meterObj) != 0 || meterObj == null) return 0;
-            float peak;
-            return ((IAudioMeterInformation)meterObj).GetPeakValue(out peak) == 0 ? peak : 0;
-        }
-        catch (COMException) { return 0; }
-        finally
-        {
-            if (meterObj != null) Marshal.ReleaseComObject(meterObj);
-            if (dev != null) Marshal.ReleaseComObject(dev);
-            if (enumObj != null) Marshal.ReleaseComObject(enumObj);
-        }
+        return hardAway || (softAwaySec > 0 && !watching && idleSec >= softAwaySec);
     }
 
     public void Dispose()
@@ -354,14 +356,16 @@ class EyeRestApp : ApplicationContext
     static readonly float[] OpacityValues = { 0.35f, 0.55f, 0.75f, 0.9f };
     const double DimRatio = 0.53;   // pha "Rời màn hình" mờ hơn: 75% → 40%
     const int PreviewSec = 6;
+    // Độ đậm < 1 để WinForms giữ cửa sổ layered (click-through).
+    const string KeyFill = "fill", KeyOpacity = "opacity";
 
-    float fill = Settings.LoadFill();
-    float opacity = Settings.LoadOpacity();
+    float fill = Settings.Get(KeyFill, 0.7f, 0.3f, 0.95f);
+    float opacity = Settings.Get(KeyOpacity, 0.75f, 0.2f, 0.9f);
     long previewUntilMs = -1;
     State state = State.Working;
     double microAcc, longAcc, breakElapsed;
     long lastMs, pauseUntilMs = -1;
-    bool away;
+    bool away, deferred;
     readonly Presence presence = new Presence();
     DateTime lastWall = DateTime.UtcNow;
 
@@ -381,6 +385,7 @@ class EyeRestApp : ApplicationContext
         menu.Items.Add("Xem thử overlay", null, delegate { Preview(); });
         menu.Items.Add(ChoiceMenu("Kích thước overlay", SizeNames, SizeValues, sizeItems, fill, SetFill));
         menu.Items.Add(ChoiceMenu("Độ đậm overlay", OpacityNames, OpacityValues, opacityItems, opacity, SetOpacity));
+        menu.Items.Add(TimingMenu());
         menu.Items.Add(new ToolStripSeparator());
         pauseItem = new ToolStripMenuItem("Tạm dừng 1 giờ", null, delegate { TogglePause(); });
         menu.Items.Add(pauseItem);
@@ -463,18 +468,27 @@ class EyeRestApp : ApplicationContext
             // Không chạm phím/chuột chưa chắc là nghỉ (đang xem video, đang đọc).
             // Chỉ tính là rời máy khi Windows báo rõ (khóa, screensaver, tắt màn) hoặc idle lâu mà không có dấu hiệu đang xem.
             uint idle = IdleSeconds();
-            bool hardAway = presence.HardAway;
-            bool watching = presence.Watching(idle, now);
-            away = Presence.IsAway(idle, hardAway, watching, cfg.SoftAwaySec);
+            away = Presence.IsAway(idle, presence.HardAway, Presence.Watching(), cfg.SoftAwaySec);
             if (away)
             {
                 if (idle >= cfg.IdleResetMicroSec) microAcc = 0;
                 if (idle >= cfg.IdleResetLongSec) longAcc = 0;
             }
-            else { microAcc += dt; longAcc += dt; }
+            else
+            {
+                microAcc += dt;
+                if (cfg.LongEverySec > 0) longAcc += dt;
+            }
 
-            if (longAcc >= cfg.LongEverySec) StartBreak(State.Long);
-            else if (microAcc >= cfg.MicroEverySec) StartBreak(State.Micro);
+            bool longDue = cfg.LongEverySec > 0 && longAcc >= cfg.LongEverySec;
+            bool microDue = microAcc >= cfg.MicroEverySec;
+            // Đang chơi game, trình chiếu, xem video toàn màn hình: chờ thoát toàn màn hình rồi mới nhắc.
+            deferred = (longDue || microDue) && cfg.DeferFullscreen && Presence.Fullscreen();
+            if (!deferred)
+            {
+                if (longDue) StartBreak(State.Long);
+                else if (microDue) StartBreak(State.Micro);
+            }
             UpdateTooltip();
             return;
         }
@@ -533,6 +547,45 @@ class EyeRestApp : ApplicationContext
         foreach (var it in items) it.Checked = Math.Abs((float)it.Tag - current) < 0.005f;
     }
 
+    // Submenu "Thời gian nhắc": mỗi lựa chọn ghi vào settings.ini rồi nạp lại Config, có hiệu lực ngay.
+    ToolStripMenuItem TimingMenu()
+    {
+        var menu = new ToolStripMenuItem("Thời gian nhắc");
+        menu.DropDownItems.Add(TimingChoice("Nghỉ ngắn mỗi", Config.KeyMicroEvery, cfg.MicroEverySec / 60f,
+            new[] { "15 phút", "20 phút (mặc định)", "30 phút", "45 phút" }, new[] { 15f, 20f, 30f, 45f }));
+        menu.DropDownItems.Add(TimingChoice("Nghỉ ngắn trong", Config.KeyMicroSec, cfg.MicroDurSec,
+            new[] { "20 giây (mặc định)", "30 giây", "60 giây" }, new[] { 20f, 30f, 60f }));
+        menu.DropDownItems.Add(TimingChoice("Nghỉ dài mỗi", Config.KeyLongEvery, cfg.LongEverySec / 60f,
+            new[] { "1 giờ", "1 giờ 30 phút", "2 giờ (mặc định)", "3 giờ", "Tắt nghỉ dài" }, new[] { 60f, 90f, 120f, 180f, 0f }));
+        menu.DropDownItems.Add(TimingChoice("Nghỉ dài trong", Config.KeyLongMin, cfg.LongDurSec / 60f,
+            new[] { "5 phút", "10 phút", "15 phút (mặc định)" }, new[] { 5f, 10f, 15f }));
+        menu.DropDownItems.Add(TimingChoice("Coi là rời máy khi không chạm máy", Config.KeyAwayAfter, cfg.SoftAwaySec / 60f,
+            new[] { "10 phút", "15 phút (mặc định)", "30 phút", "Không bao giờ (chỉ khi khóa máy, tắt màn hình)" },
+            new[] { 10f, 15f, 30f, 0f }));
+        menu.DropDownItems.Add(new ToolStripSeparator());
+        var deferItem = new ToolStripMenuItem("Hoãn nhắc khi đang toàn màn hình") { Checked = cfg.DeferFullscreen };
+        deferItem.Click += delegate
+        {
+            deferItem.Checked = !deferItem.Checked;
+            Settings.Set(Config.KeyDeferFullscreen, deferItem.Checked ? 1 : 0);
+            cfg.LoadSettings();
+        };
+        menu.DropDownItems.Add(deferItem);
+        return menu;
+    }
+
+    ToolStripMenuItem TimingChoice(string title, string key, float current, string[] names, float[] values)
+    {
+        var items = new List<ToolStripMenuItem>();
+        return ChoiceMenu(title, names, values, items, current, delegate (float v)
+        {
+            Settings.Set(key, v);
+            cfg.LoadSettings();
+            UpdateChecks(items, v);
+            UpdateTooltip();
+        });
+    }
+
     void SetFill(float f)
     {
         fill = f;
@@ -550,7 +603,8 @@ class EyeRestApp : ApplicationContext
     // Lưu lựa chọn rồi cho xem ngay: đang nghỉ thì cập nhật overlay tại chỗ, không thì hiện xem thử.
     void ApplyLook()
     {
-        Settings.Save(fill, opacity);
+        Settings.Set(KeyFill, fill);
+        Settings.Set(KeyOpacity, opacity);
         EnsureOverlays();
         if (state == State.Working) { Preview(); return; }
         ShowBreakFrame(state == State.Micro ? cfg.MicroDurSec : cfg.LongDurSec);
@@ -629,8 +683,11 @@ class EyeRestApp : ApplicationContext
             text = Program.AppName + " - tạm dừng, còn " + Fmt((pauseUntilMs - clock.ElapsedMilliseconds) / 1000.0);
         else if (away && state == State.Working)
             text = Program.AppName + " - đang rời máy, dừng đếm";
+        else if (deferred && state == State.Working)
+            text = Program.AppName + " - hoãn nhắc vì đang toàn màn hình";
         else
-            text = Program.AppName + " - ngắn sau " + Fmt(cfg.MicroEverySec - microAcc) + " | dài sau " + Fmt(cfg.LongEverySec - longAcc);
+            text = Program.AppName + " - ngắn sau " + Fmt(cfg.MicroEverySec - microAcc) + " | dài "
+                 + (cfg.LongEverySec > 0 ? "sau " + Fmt(cfg.LongEverySec - longAcc) : "tắt");
         if (text.Length > 63) text = text.Substring(0, 63);
         tray.Text = text;
     }
@@ -663,10 +720,11 @@ class EyeRestApp : ApplicationContext
             "Nhắc nghỉ mắt cho Windows.\n" +
             "Tác giả: " + Program.Author + "\n" +
             "Mã nguồn mở, giấy phép GPL-3.0-or-later.\n\n" +
-            "• Mỗi 20 phút: nhìn xa ≥ 6 m trong 20 giây (quy tắc 20-20-20).\n" +
-            "• Mỗi 2 giờ: nghỉ 15 phút, kèm bài đưa mắt thư giãn.\n" +
+            "• Mặc định mỗi 20 phút: nhìn xa ≥ 6 m trong 20 giây (quy tắc 20-20-20).\n" +
+            "• Mặc định mỗi 2 giờ: nghỉ 15 phút, kèm bài đưa mắt thư giãn.\n" +
+            "• Chỉnh các mốc này trong menu khay > Thời gian nhắc.\n" +
             "• Overlay mờ, chuột bấm xuyên qua, không chiếm bàn phím.\n" +
-            "• Tự dừng đếm khi khóa máy, tắt màn hoặc rời máy lâu.\n\n" +
+            "• Tự dừng đếm khi khóa máy, tắt màn hoặc rời máy lâu; hoãn nhắc khi đang toàn màn hình.\n\n" +
             "Cài đặt lưu tại:\n" + Settings.FilePath,
             "Giới thiệu " + Program.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
