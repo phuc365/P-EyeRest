@@ -33,8 +33,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct(Program.AppName)]
 [assembly: AssemblyCompany(Program.Author)]
 [assembly: AssemblyCopyright("© 2026 " + Program.Author)]
-[assembly: AssemblyVersion("1.1.0")]
-[assembly: AssemblyFileVersion("1.1.0")]
+[assembly: AssemblyVersion("1.2.0")]
+[assembly: AssemblyFileVersion("1.2.0")]
 
 static class Program
 {
@@ -74,11 +74,13 @@ class Config
 {
     // Khóa trong settings.ini (chỉnh qua menu khay "Thời gian nhắc").
     public const string KeyMicroEvery = "micro_every_min", KeyMicroSec = "micro_sec", KeyLongEvery = "long_every_min",
-                        KeyLongMin = "long_min", KeyAwayAfter = "away_after_min", KeyDeferFullscreen = "defer_fullscreen";
+                        KeyLongMin = "long_min", KeyAwayAfter = "away_after_min", KeyDeferFullscreen = "defer_fullscreen",
+                        KeyDeferMax = "defer_max_min";
 
     public int MicroEverySec, MicroDurSec, LongEverySec, LongDurSec;   // LongEverySec = 0: tắt nghỉ dài
     public int IdleResetMicroSec, IdleResetLongSec, SoftAwaySec, StepSec;   // SoftAwaySec = 0: chỉ tính rời máy khi khóa/tắt màn
     public bool DeferFullscreen = true;   // hoãn nhắc khi đang có app toàn màn hình hoặc trình chiếu
+    public int DeferMaxSec = 30 * 60;     // hoãn quá mốc này thì vẫn nhắc; 0 = hoãn không giới hạn
 
     public static Config Default()
     {
@@ -102,6 +104,7 @@ class Config
         LongDurSec = (int)(Settings.Get(KeyLongMin, 15, 2, 60) * 60);
         SoftAwaySec = (int)(Settings.Get(KeyAwayAfter, 15, 0, 120) * 60);
         DeferFullscreen = Settings.Get(KeyDeferFullscreen, 1, 0, 1) >= 0.5f;
+        DeferMaxSec = (int)(Settings.Get(KeyDeferMax, 30, 0, 240) * 60);
         IdleResetLongSec = Math.Max(LongDurSec, IdleResetMicroSec);
     }
 
@@ -364,7 +367,7 @@ class EyeRestApp : ApplicationContext
     long previewUntilMs = -1;
     State state = State.Working;
     double microAcc, longAcc, breakElapsed;
-    long lastMs, pauseUntilMs = -1;
+    long lastMs, pauseUntilMs = -1, deferSinceMs = -1;
     bool away, deferred;
     readonly Presence presence = new Presence();
     DateTime lastWall = DateTime.UtcNow;
@@ -482,10 +485,17 @@ class EyeRestApp : ApplicationContext
 
             bool longDue = cfg.LongEverySec > 0 && longAcc >= cfg.LongEverySec;
             bool microDue = microAcc >= cfg.MicroEverySec;
-            // Đang chơi game, trình chiếu, xem video toàn màn hình: chờ thoát toàn màn hình rồi mới nhắc.
-            deferred = (longDue || microDue) && cfg.DeferFullscreen && Presence.Fullscreen();
+            // Đang chơi game, trình chiếu, xem video toàn màn hình: chờ thoát toàn màn hình rồi mới nhắc,
+            // nhưng hoãn quá DeferMaxSec thì vẫn nhắc.
+            if ((longDue || microDue) && cfg.DeferFullscreen && Presence.Fullscreen())
+            {
+                if (deferSinceMs < 0) deferSinceMs = now;
+                deferred = cfg.DeferMaxSec == 0 || now - deferSinceMs < cfg.DeferMaxSec * 1000L;
+            }
+            else { deferSinceMs = -1; deferred = false; }
             if (!deferred)
             {
+                deferSinceMs = -1;
                 if (longDue) StartBreak(State.Long);
                 else if (microDue) StartBreak(State.Micro);
             }
@@ -564,13 +574,18 @@ class EyeRestApp : ApplicationContext
             new[] { 10f, 15f, 30f, 0f }));
         menu.DropDownItems.Add(new ToolStripSeparator());
         var deferItem = new ToolStripMenuItem("Hoãn nhắc khi đang toàn màn hình") { Checked = cfg.DeferFullscreen };
+        var deferMax = TimingChoice("Hoãn tối đa", Config.KeyDeferMax, cfg.DeferMaxSec / 60f,
+            new[] { "15 phút", "30 phút (mặc định)", "60 phút", "Không giới hạn" }, new[] { 15f, 30f, 60f, 0f });
+        deferMax.Enabled = cfg.DeferFullscreen;
         deferItem.Click += delegate
         {
             deferItem.Checked = !deferItem.Checked;
+            deferMax.Enabled = deferItem.Checked;
             Settings.Set(Config.KeyDeferFullscreen, deferItem.Checked ? 1 : 0);
             cfg.LoadSettings();
         };
         menu.DropDownItems.Add(deferItem);
+        menu.DropDownItems.Add(deferMax);
         return menu;
     }
 
@@ -672,6 +687,7 @@ class EyeRestApp : ApplicationContext
     void Resume()
     {
         pauseUntilMs = -1;
+        deferSinceMs = -1;
         microAcc = 0;
         pauseItem.Text = "Tạm dừng 1 giờ";
     }
@@ -684,7 +700,8 @@ class EyeRestApp : ApplicationContext
         else if (away && state == State.Working)
             text = Program.AppName + " - đang rời máy, dừng đếm";
         else if (deferred && state == State.Working)
-            text = Program.AppName + " - hoãn nhắc vì đang toàn màn hình";
+            text = Program.AppName + " - hoãn vì toàn màn hình"
+                 + (cfg.DeferMaxSec > 0 ? ", nhắc sau " + Fmt(cfg.DeferMaxSec - (clock.ElapsedMilliseconds - deferSinceMs) / 1000.0) : "");
         else
             text = Program.AppName + " - ngắn sau " + Fmt(cfg.MicroEverySec - microAcc) + " | dài "
                  + (cfg.LongEverySec > 0 ? "sau " + Fmt(cfg.LongEverySec - longAcc) : "tắt");
