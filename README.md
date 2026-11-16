@@ -118,7 +118,8 @@ Nếu bạn rời máy ít nhất 5 phút, bộ đếm nghỉ ngắn quay về 0
 - Một số ứng dụng giữ màn hình sáng cả khi không phát video, ví dụ công cụ chống sleep hoặc phần mềm điều khiển từ xa. Khi ứng dụng này chạy, P-EyeRest coi là bạn đang xem, nên không dừng đếm khi bạn không chạm máy.
 - Tác giả đã kiểm cách nhận biết video với Edge và MPC-HC. Nếu trình phát video của bạn không yêu cầu Windows giữ màn hình sáng, P-EyeRest không thấy video đó. Khi bạn xem lâu hơn ngưỡng rời máy mà không chạm máy, P-EyeRest coi là bạn đã rời máy và đặt lại bộ đếm.
 - Nếu bạn chọn **Hoãn tối đa** là "Không giới hạn" và chơi game hoặc xem phim toàn màn hình liền nhiều giờ, P-EyeRest không nhắc cho tới khi bạn thoát toàn màn hình.
-- Tác giả đã kiểm chế độ hoãn nhắc với cửa sổ không viền phủ toàn màn hình, chưa kiểm với game DirectX độc quyền hoặc PowerPoint trình chiếu. Game DirectX độc quyền có thể che bảng nhắc khi P-EyeRest nhắc lúc hết thời gian hoãn.
+- Nếu bạn trình chiếu lâu hơn thời gian hoãn tối đa, bảng nhắc hiện trên màn hình khán giả. Trước khi trình chiếu lâu, chọn **Tạm dừng 1 giờ**, hoặc chọn **Hoãn tối đa** là "Không giới hạn".
+- Tác giả đã kiểm chế độ hoãn nhắc với cửa sổ không viền phủ toàn màn hình và với PowerPoint (Microsoft 365) trình chiếu trên 2 màn hình có Presenter View. Tác giả chưa kiểm với game DirectX độc quyền. Game DirectX độc quyền có thể che bảng nhắc khi P-EyeRest nhắc lúc hết thời gian hoãn.
 
 ## Giấy phép
 
