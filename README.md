@@ -114,7 +114,8 @@ Nếu bạn rời máy ít nhất 5 phút, bộ đếm nghỉ ngắn quay về 0
 
 - P-EyeRest không có cảm biến để biết bạn có đang nhìn màn hình hay không. Nếu bạn thường đọc lâu mà không chạm máy, chọn "Không bao giờ" ở mục **Coi là rời máy khi không chạm máy**. Khi đó P-EyeRest chỉ tính rời máy khi máy khóa hoặc màn hình tắt.
 - Một số ứng dụng giữ màn hình sáng cả khi không phát video, ví dụ công cụ chống sleep hoặc phần mềm điều khiển từ xa. Khi ứng dụng này chạy, P-EyeRest coi là bạn đang xem, nên không dừng đếm khi bạn không chạm máy.
-- Trình phát video dùng cách giữ màn hình sáng kiểu cũ (`SetThreadExecutionState`) thì P-EyeRest không thấy được. Tác giả đã kiểm với Edge, chưa kiểm với trình phát video khác.
+- Tác giả đã kiểm cách nhận biết video với Edge và MPC-HC. Nếu trình phát video của bạn không yêu cầu Windows giữ màn hình sáng, P-EyeRest không thấy video đó. Khi bạn xem lâu hơn ngưỡng rời máy mà không chạm máy, P-EyeRest coi là bạn đã rời máy và đặt lại bộ đếm.
+- Chế độ hoãn nhắc không có giới hạn thời gian. Nếu bạn chơi game hoặc xem phim toàn màn hình liền nhiều giờ, P-EyeRest không nhắc cho tới khi bạn thoát toàn màn hình. Để luôn nhắc, tắt mục **Hoãn nhắc khi đang toàn màn hình**.
 - Tác giả đã kiểm chế độ hoãn nhắc với cửa sổ không viền phủ toàn màn hình, chưa kiểm với game DirectX độc quyền hoặc PowerPoint trình chiếu.
 
 ## Giấy phép
