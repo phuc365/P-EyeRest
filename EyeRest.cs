@@ -33,8 +33,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct(Program.AppName)]
 [assembly: AssemblyCompany(Program.Author)]
 [assembly: AssemblyCopyright("© 2026 " + Program.Author)]
-[assembly: AssemblyVersion("1.2.0")]
-[assembly: AssemblyFileVersion("1.2.0")]
+[assembly: AssemblyVersion("1.2.5")]
+[assembly: AssemblyFileVersion("1.2.5")]
 
 static class Program
 {
@@ -516,7 +516,17 @@ class EyeRestApp : ApplicationContext
         previewUntilMs = -1;
         EnsureOverlays();
         ShowBreakFrame(kind == State.Micro ? cfg.MicroDurSec : cfg.LongDurSec);
-        foreach (var o in overlays) o.ShowCue();
+        ShowOverlays();
+    }
+
+    // Nút "Bỏ qua" chỉ hiện khi đang nghỉ, không hiện lúc xem thử.
+    void ShowOverlays()
+    {
+        foreach (var o in overlays)
+        {
+            o.SkipEnabled = state != State.Working;
+            o.ShowCue();
+        }
     }
 
     // Hiện overlay vài giây để xem kích thước; không ảnh hưởng bộ đếm nghỉ.
@@ -526,7 +536,7 @@ class EyeRestApp : ApplicationContext
         EnsureOverlays();
         previewUntilMs = clock.ElapsedMilliseconds + PreviewSec * 1000L;
         ShowPreviewFrame();
-        foreach (var o in overlays) o.ShowCue();
+        ShowOverlays();
     }
 
     void ShowPreviewFrame()
@@ -623,7 +633,7 @@ class EyeRestApp : ApplicationContext
         EnsureOverlays();
         if (state == State.Working) { Preview(); return; }
         ShowBreakFrame(state == State.Micro ? cfg.MicroDurSec : cfg.LongDurSec);
-        foreach (var o in overlays) o.ShowCue();
+        ShowOverlays();
     }
 
     // Tạo lại overlay khi số màn hình, vùng làm việc hoặc kích thước chọn thay đổi.
@@ -635,7 +645,12 @@ class EyeRestApp : ApplicationContext
         if (same) return;
         foreach (var o in overlays) o.Close();
         overlays.Clear();
-        foreach (var sc in screens) overlays.Add(new Overlay(sc.WorkingArea, fill));
+        foreach (var sc in screens)
+        {
+            var o = new Overlay(sc.WorkingArea, fill);
+            o.Skip += delegate { if (state != State.Working) EndBreak(); };
+            overlays.Add(o);
+        }
     }
 
     void Cue(string title, string sub, Mode mode, float dx, float dy, int remain, double progress, double opacity)
@@ -789,6 +804,11 @@ class Overlay : Form
     long cueStartMs;
     bool fadingOut;
 
+    // Overlay click-through không nhận chuột, nên nút "Bỏ qua" là một cửa sổ nhỏ riêng nằm đè lên.
+    readonly SkipButton skip;
+    public bool SkipEnabled;          // app đặt trước ShowCue(): true khi đang nghỉ
+    public event Action Skip;
+
     public Overlay(Rectangle workingArea, float fill)
     {
         Area = workingArea;
@@ -814,6 +834,16 @@ class Overlay : Form
 
         anim = new System.Windows.Forms.Timer { Interval = 33 };
         anim.Tick += delegate { Animate(); };
+
+        int bw = (int)(26 * u), bh = (int)(6 * u);
+        skip = new SkipButton(new Rectangle(Bounds.Left + (w - bw) / 2, Bounds.Top + (int)(90.5f * u), bw, bh), u);
+        skip.Click += delegate { var handler = Skip; if (handler != null) handler(); };
+    }
+
+    // Nút mờ theo overlay nhưng đậm hơn một chút để chữ vẫn đọc được; luôn < 1 để giữ cửa sổ layered.
+    void SyncSkip()
+    {
+        if (skip.Visible) skip.Opacity = Opacity <= 0 ? 0 : Math.Min(0.95, Opacity + 0.15);
     }
 
     PointF EyeCenter() { return new PointF(ClientSize.Width / 2f, 34 * u); }
@@ -822,7 +852,7 @@ class Overlay : Form
     {
         if (disposing)
         {
-            anim.Dispose(); titleFont.Dispose(); subFont.Dispose(); countFont.Dispose(); centered.Dispose();
+            anim.Dispose(); titleFont.Dispose(); subFont.Dispose(); countFont.Dispose(); centered.Dispose(); skip.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -851,6 +881,13 @@ class Overlay : Form
         fadingOut = false;
         if (!Visible) { Opacity = 0; Show(); }
         SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (SkipEnabled)
+        {
+            if (!skip.Visible) { skip.Opacity = 0; skip.Show(); }
+            SyncSkip();
+            SetWindowPos(skip.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);   // trên overlay
+        }
+        else if (skip.Visible) skip.Hide();
         anim.Start();
     }
 
@@ -864,7 +901,7 @@ class Overlay : Form
         if (fadingOut)
         {
             double o = Opacity - 0.06;
-            if (o <= 0) { Opacity = 0; Hide(); anim.Stop(); fadingOut = false; return; }
+            if (o <= 0) { Opacity = 0; Hide(); skip.Hide(); anim.Stop(); fadingOut = false; return; }
             Opacity = o;
         }
         else if (Math.Abs(Opacity - TargetOpacity) > 0.01)
@@ -872,6 +909,7 @@ class Overlay : Form
             Opacity = Opacity < TargetOpacity ? Math.Min(TargetOpacity, Opacity + 0.06)
                                               : Math.Max(TargetOpacity, Opacity - 0.03);
         }
+        SyncSkip();
         Invalidate(eyeBox);   // chỉ vẽ lại vùng con mắt cho nhẹ CPU; chữ vẽ lại qua SetCue
     }
 
@@ -954,7 +992,7 @@ class Overlay : Form
         }
     }
 
-    static GraphicsPath RoundRect(RectangleF r, float rad)
+    internal static GraphicsPath RoundRect(RectangleF r, float rad)
     {
         var p = new GraphicsPath();
         float d = rad * 2;
@@ -964,5 +1002,74 @@ class Overlay : Form
         p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         p.CloseFigure();
         return p;
+    }
+}
+
+// Nút "Bỏ qua lần này" trên overlay: bấm được nhưng không lấy focus của app đang dùng.
+class SkipButton : Form
+{
+    const int WS_EX_TOPMOST = 0x8, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x8000000;
+    const int WM_MOUSEACTIVATE = 0x21, MA_NOACTIVATE = 3;
+    const string Text0 = "Bỏ qua lần này";
+    readonly Font font;
+    readonly StringFormat centered = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+    bool hover;
+
+    public SkipButton(Rectangle bounds, float u)
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        Bounds = bounds;
+        BackColor = Color.FromArgb(22, 26, 34);
+        DoubleBuffered = true;
+        Opacity = 0;
+        Cursor = Cursors.Hand;
+        font = new Font("Segoe UI Semibold", 2.6f * u, GraphicsUnit.Pixel);
+        using (var path = Overlay.RoundRect(new RectangleF(0, 0, bounds.Width, bounds.Height), bounds.Height / 2f))
+            Region = new Region(path);
+        MouseEnter += delegate { hover = true; Invalidate(); };
+        MouseLeave += delegate { hover = false; Invalidate(); };
+    }
+
+    protected override bool ShowWithoutActivation { get { return true; } }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            return cp;
+        }
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_MOUSEACTIVATE) { m.Result = new IntPtr(MA_NOACTIVATE); return; }
+        base.WndProc(ref m);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        var r = new RectangleF(0.5f, 0.5f, ClientSize.Width - 1, ClientSize.Height - 1);
+        using (var path = Overlay.RoundRect(r, r.Height / 2f))
+        using (var bg = new SolidBrush(hover ? Color.FromArgb(62, 74, 94) : Color.FromArgb(40, 48, 62)))
+        using (var pen = new Pen(Color.FromArgb(120, 200, 255), 1.2f))
+        using (var ink = new SolidBrush(Color.FromArgb(232, 238, 246)))
+        {
+            g.FillPath(bg, path);
+            g.DrawPath(pen, path);
+            g.DrawString(Text0, font, ink, r, centered);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { font.Dispose(); centered.Dispose(); }
+        base.Dispose(disposing);
     }
 }

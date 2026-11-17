@@ -1,12 +1,13 @@
 # P-EyeRest
 
 P-EyeRest là công cụ nhỏ cho Windows, nhắc bạn nghỉ mắt khi làm việc với máy tính.
-Lời nhắc hiện thành một bảng mờ ở giữa màn hình. Chuột bấm xuyên qua bảng này, và bảng không lấy focus bàn phím. Vì vậy công việc đang làm không bị gián đoạn.
+Lời nhắc hiện thành một bảng mờ ở giữa màn hình. Chuột bấm xuyên qua bảng này, và bảng không lấy focus bàn phím. Vì vậy công việc đang làm không bị gián đoạn. Nếu bạn muốn bỏ qua một lần nhắc, bấm nút **Bỏ qua lần này** ở cuối bảng.
 
 ## Tính năng
 
 - **Nghỉ ngắn:** mỗi 20 phút làm việc, bảng nhắc bạn nhìn xa ít nhất 6 m trong 20 giây.
 - **Nghỉ dài:** mỗi 2 giờ làm việc, bảng nhắc bạn nghỉ 15 phút. Phần đầu có bài đưa mắt theo các hướng (lên, xuống, trái, phải, chéo, đảo tròn, chớp mắt, nhắm mắt). Sau đó bảng mờ hơn và nhắc bạn rời màn hình.
+- **Nút "Bỏ qua lần này" trên bảng nhắc:** chỉ vùng nút bấm được, phần còn lại của bảng vẫn cho chuột bấm xuyên qua. Bấm nút không lấy focus của ứng dụng bạn đang dùng.
 - **Hiện trên mọi màn hình:** mỗi màn hình có một bảng nhắc, nét ở mọi mức scale DPI.
 - **Tự dừng đếm khi bạn rời máy:** xem mục [Cách tính thời gian làm việc](#cách-tính-thời-gian-làm-việc).
 - **Hoãn nhắc khi bạn đang dùng ứng dụng toàn màn hình:** khi bạn chơi game, trình chiếu hoặc xem video toàn màn hình, P-EyeRest chờ bạn thoát toàn màn hình rồi mới hiện bảng nhắc. Nếu bạn vẫn ở toàn màn hình sau 30 phút hoãn (chỉnh được), P-EyeRest vẫn nhắc.
@@ -53,7 +54,7 @@ Chuột phải icon con mắt ở khay hệ thống để mở menu:
 |---|---|
 | Nghỉ ngắn ngay (20-20-20) | Bắt đầu một lần nghỉ ngắn |
 | Nghỉ dài ngay | Bắt đầu một lần nghỉ dài |
-| Bỏ qua lần nghỉ đang hiện | Ẩn bảng nhắc và tính lại từ đầu |
+| Bỏ qua lần nghỉ đang hiện | Ẩn bảng nhắc và tính lại từ đầu. Nút **Bỏ qua lần này** trên bảng nhắc làm cùng việc này |
 | Xem thử overlay | Hiện bảng nhắc 6 giây, không ảnh hưởng bộ đếm |
 | Kích thước overlay | 50%, 70% (mặc định), 85% hoặc 92% vùng làm việc của màn hình |
 | Độ đậm overlay | 35%, 55%, 75% (mặc định) hoặc 90% |
